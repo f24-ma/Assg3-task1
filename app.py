@@ -1,76 +1,58 @@
 import streamlit as st
 import google.generativeai as genai
 
-st.set_page_config(page_title="Medical RAG System", layout="wide")
+st.set_page_config(page_title="Medical RAG - Simple", layout="wide")
 
-# Initialize session state
+st.sidebar.header("System Status")
+
+# Put your API key here or type in sidebar (do NOT commit real keys in github)
 if 'api_key' not in st.session_state:
-    st.session_state.api_key = "AIzaSyDF-W-pw8E-20SjTGVri_ChGCuD9wMRsy4"
-if 'model' not in st.session_state:
-    st.session_state.model = None
+    st.session_state.api_key = ""
 
-# Sidebar
-with st.sidebar:
-    st.header("System Status")
-    
-    api_key = st.text_input("Enter Gemini API Key", type="password", value=st.session_state.api_key)
-    
-    if api_key:
-        st.session_state.api_key = api_key
-        try:
-            genai.configure(api_key=api_key)
-            st.session_state.model = genai.GenerativeModel('gemini-pro')
-            st.success("Gemini AI: Active")
-        except Exception as e:
-            st.error(f"Error: {str(e)}")
-            st.session_state.model = None
-    else:
-        st.warning("Gemini AI: Inactive")
-        st.info("AIzaSyDF-W-pw8E-20SjTGVri_ChGCuD9wMRsy4")
-    
-    st.divider()
-    st.subheader("Try These Examples")
-    if st.button("What are common symptoms of pneumonia?", use_container_width=True):
-        st.session_state.question = "What are common symptoms of pneumonia?"
-    if st.button("How to treat allergic rhinitis?", use_container_width=True):
-        st.session_state.question = "How to treat allergic rhinitis?"
-    if st.button("What are signs of myocardial infarction?", use_container_width=True):
-        st.session_state.question = "What are signs of myocardial infarction?"
+api_key = st.sidebar.text_input("Enter Gemini / GenAI API Key", type="password", value=st.session_state.api_key)
+st.session_state.api_key = api_key
 
-# Main content
-st.title("Medical RAG System")
-st.markdown("Get evidence-based medical answers")
+# Choose a model name that is commonly available for text gen.
+# If this returns 404, you'll need to replace this with a model your account can access.
+model_name = "models/text-bison-001"
 
-question = st.text_input("Enter your question:", value=st.session_state.get('question', ''))
-num_sources = st.slider("Sources:", 1, 10, 4)
+if api_key:
+    try:
+        genai.configure(api_key=api_key)
+        st.sidebar.success("API key set (not validated).")
+    except Exception as e:
+        st.sidebar.error(f"Configure error: {e}")
 
-if st.button("Find Answer", type="primary"):
+st.title("Medical RAG — Very Simple (fixed)")
+
+question = st.text_input("Enter your question:", value="")
+# Fix: use named args for slider
+num_sources = st.slider("Sources:", min_value=1, max_value=10, value=4)
+
+if st.button("Find Answer"):
     if not question:
-        st.warning("Please enter a question")
-    elif st.session_state.model is None:
-        st.warning("Please enter your Gemini API key in the sidebar")
+        st.warning("Please enter a question.")
+    elif not api_key:
+        st.warning("Please enter your Gemini/GenAI API key in the sidebar.")
     else:
         with st.spinner("Generating answer..."):
             try:
-                prompt = f"""You are a medical information assistant. Answer this question:
-
-{question}
-
-Provide accurate, evidence-based information with appropriate disclaimers."""
+                # Simple prompt
+                prompt = f"You are a medical assistant. Answer concisely and cite sources.\n\nQuestion: {question}"
+                # Use a simple generate call. If your library uses different name, change this.
+                resp = genai.generate_text(model=model_name, input=prompt)
                 
-                response = st.session_state.model.generate_content(prompt)
+                # resp may differ by library: check attributes
+                text = getattr(resp, "text", None) or (resp.get("output") if isinstance(resp, dict) else None)
+                if text is None:
+                    # fallback try to print whole response
+                    st.write("Raw response object:")
+                    st.write(resp)
+                else:
+                    st.subheader("Answer")
+                    st.write(text)
                 
-                st.subheader("Answer")
-                st.write(response.text)
-                
-                st.subheader("Sources Consulted")
-                sources = ["PubMed (NCBI)", "Mayo Clinic", "WHO", "CDC", "NIH"]
-                for i, source in enumerate(sources[:num_sources], 1):
-                    with st.expander(f"Source {i}: {source}"):
-                        st.write(f"Medical reference about: {question}")
-                
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
-
-st.divider()
-st.caption("Disclaimer: This provides general medical information. Always consult healthcare professionals.")
+                st.subheader("Sources (example)")
+                example_sources = ["PubMed", "WHO", "Mayo Clinic", "CDC", "NIH"]
+                for s in example_sources[:num_sources]:
+                    st.write(f
