@@ -5,7 +5,7 @@ st.set_page_config(page_title="Medical RAG System", layout="wide")
 
 # Initialize session state
 if 'api_key' not in st.session_state:
-    st.session_state.api_key = ""
+    st.session_state.api_key = "AIzaSyDF-W-pw8E-20SjTGVri_ChGCuD9wMRsy4"
 if 'model' not in st.session_state:
     st.session_state.model = None
 
@@ -13,7 +13,7 @@ if 'model' not in st.session_state:
 with st.sidebar:
     st.header("System Status")
     
-    api_key = st.text_input("Enter Gemini API Key", type="password", value=st.session_state.api_key)
+    api_key = st.text_input("AIzaSyDF-W-pw8E-20SjTGVri_ChGCuD9wMRsy4", type="1234", value=st.session_state.api_key)
     
     if api_key:
         st.session_state.api_key = api_key
@@ -26,7 +26,7 @@ with st.sidebar:
             st.session_state.model = None
     else:
         st.warning("Gemini AI: Inactive")
-        st.info("Enter your API key to activate")
+        st.info("AIzaSyDF-W-pw8E-20SjTGVri_ChGCuD9wMRsy4")
     
     st.divider()
     st.subheader("Try These Examples")
