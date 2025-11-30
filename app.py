@@ -4,53 +4,51 @@ import google.generativeai as genai
 
 st.set_page_config(page_title="Medical RAG (Simple)", layout="wide")
 
-# The ONLY correct model name for the new API:
-MODEL_NAME = "gemini-1.5-flash"
+# Use the OLD model name fully compatible with your installed API (v1beta)
+MODEL_NAME = "models/text-bison-001"
 
-# Sidebar
 st.sidebar.header("Settings / API")
-api_key = st.sidebar.text_input(
-    "Gemini API Key (or set via Secrets)",
-    type="password"
-)
+api_key = st.sidebar.text_input("Gemini API Key", type="password")
 
-# Configure API (correct way)
+# Configure OLD API
 if api_key:
     try:
         genai.configure(api_key=api_key)
         st.sidebar.success("Gemini configured ✔")
     except Exception as e:
-        st.sidebar.error(f"API Configuration failed: {e}")
+        st.sidebar.error(f"Configuration error: {e}")
 else:
-    st.sidebar.warning("Enter API Key to continue.")
+    st.sidebar.warning("Enter API key to continue.")
 
-# UI
-st.title("Medical RAG — Simple")
+st.title("Medical RAG — Simple (Legacy API)")
 question = st.text_input("Enter your medical question:")
 num_sources = st.slider("Sources to show (fake list)", 1, 5, 3)
 
 
 def ask_gemini(prompt: str) -> str:
-    """The ONLY correct call for new Gemini API."""
+    """Uses legacy v1beta API format — fully compatible with your device."""
     try:
-        model = genai.GenerativeModel(MODEL_NAME)
-        response = model.generate_content(prompt)
-        return response.text
+        response = genai.generate_text(
+            model=MODEL_NAME,
+            prompt=prompt,
+            temperature=0.2,
+            max_output_tokens=256
+        )
+        return response.generations[0].text
     except Exception as e:
-        # Display exact Gemini error
         raise RuntimeError(str(e))
 
 
 if st.button("Find Answer"):
     if not api_key:
-        st.warning("Please add API key first!")
+        st.warning("Please provide API key.")
     elif question.strip() == "":
-        st.warning("Ask a question first!")
+        st.warning("Enter a question.")
     else:
         with st.spinner("Thinking..."):
             prompt = (
                 "You are a helpful medical assistant. "
-                "Answer concisely and include a short disclaimer that this is not medical advice.\n\n"
+                "Answer briefly and include a disclaimer that this is not medical advice.\n\n"
                 f"Question: {question}"
             )
             try:
@@ -59,11 +57,10 @@ if st.button("Find Answer"):
                 st.write(answer)
 
                 st.subheader("Sources (example list)")
-                sources = ["PubMed", "WHO", "CDC", "NIH", "Mayo Clinic"]
+                fake_sources = ["PubMed", "WHO", "CDC", "NIH", "Mayo Clinic"]
                 for i in range(num_sources):
-                    st.write(f"{i+1}. {sources[i]}")
-
+                    st.write(f"{i+1}. {fake_sources[i]}")
             except Exception as e:
                 st.error(f"Error calling Gemini: {e}")
 
-st.caption("Disclaimer: This is informational only — consult healthcare professionals.")
+st.caption("Disclaimer: Informational only — consult healthcare professionals.")
