@@ -229,17 +229,17 @@ def retrieve_relevant_context(query: str) -> str:
 # QUERY GENERATION FUNCTION
 # ============================================================================
 
-def generate_response(model_name: str, question: str, max_tokens: int = 2048) -> str:
-    """Generate response using Gemini model with RAG context"""
-    try:
-        # Clean model name (remove "models/" prefix if present)
-        clean_model_name = model_name.replace("models/", "")
-        
-        # Retrieve relevant context
-        context = retrieve_relevant_context(question)
-        
-        # Create enhanced prompt with RAG context
-        enhanced_prompt = f"""You are a medical AI assistant. Use the following medical knowledge to answer the question accurately and professionally.
+def generate_response(model_name: str, question: str, max_tokens: int = 2048, fallback_models: List[str] = None) -> Dict:
+    """Generate response using Gemini model with RAG context and automatic fallback"""
+    
+    # Clean model name (remove "models/" prefix if present)
+    clean_model_name = model_name.replace("models/", "")
+    
+    # Retrieve relevant context
+    context = retrieve_relevant_context(question)
+    
+    # Create enhanced prompt with RAG context
+    enhanced_prompt = f"""You are a medical AI assistant. Use the following medical knowledge to answer the question accurately and professionally.
 
 MEDICAL KNOWLEDGE BASE:
 {context}
@@ -250,33 +250,95 @@ Please provide a clear, accurate, and professional medical response based on the
 
 IMPORTANT: This is for educational purposes only. Always advise consulting healthcare professionals for actual medical decisions."""
 
-        # Initialize model
-        model = genai.GenerativeModel(clean_model_name)
-        
-        # Configure generation
-        generation_config = genai.types.GenerationConfig(
-            max_output_tokens=max_tokens,
-            temperature=0.7,
-        )
-        
-        # Generate response
-        response = model.generate_content(
-            enhanced_prompt,
-            generation_config=generation_config
-        )
-        
-        return response.text
+    # List of models to try in order (if fallback_models provided)
+    models_to_try = [clean_model_name]
+    if fallback_models:
+        # Add fallback models (lighter models that use less quota)
+        for fb_model in fallback_models:
+            fb_clean = fb_model.replace("models/", "")
+            if fb_clean not in models_to_try:
+                models_to_try.append(fb_clean)
     
-    except Exception as e:
-        error_msg = str(e)
-        if "404" in error_msg:
-            return f"❌ Model not found. Please select a different model from the dropdown. Error: {error_msg}"
-        elif "quota" in error_msg.lower():
-            return f"❌ API quota exceeded. Please check your Google AI Studio quota. Error: {error_msg}"
-        elif "api key" in error_msg.lower():
-            return f"❌ API key error. Please verify your API key is correct. Error: {error_msg}"
-        else:
-            return f"❌ Error generating response: {error_msg}"
+    last_error = None
+    
+    for attempt, model_to_try in enumerate(models_to_try):
+        try:
+            # Initialize model
+            model = genai.GenerativeModel(model_to_try)
+            
+            # Configure generation
+            generation_config = genai.types.GenerationConfig(
+                max_output_tokens=max_tokens,
+                temperature=0.7,
+            )
+            
+            # Generate response
+            response = model.generate_content(
+                enhanced_prompt,
+                generation_config=generation_config
+            )
+            
+            # Success!
+            result = {
+                "success": True,
+                "text": response.text,
+                "model_used": model_to_try,
+                "attempt": attempt + 1
+            }
+            
+            # Add warning if fallback was used
+            if attempt > 0:
+                result["warning"] = f"⚠️ Primary model failed. Used fallback model: {model_to_try}"
+            
+            return result
+        
+        except Exception as e:
+            last_error = str(e)
+            error_lower = last_error.lower()
+            
+            # If it's a quota error and we have more models to try, continue
+            if ("quota" in error_lower or "429" in last_error or "resource" in error_lower) and attempt < len(models_to_try) - 1:
+                continue
+            
+            # If it's a 404 and we have more models to try, continue
+            elif "404" in last_error and attempt < len(models_to_try) - 1:
+                continue
+            
+            # Otherwise, if it's the last attempt or a different error, break
+            elif attempt == len(models_to_try) - 1:
+                break
+            else:
+                break
+    
+    # All attempts failed, return error
+    error_msg = last_error
+    if "404" in error_msg:
+        error_text = f"❌ **Model Error**\n\nThe selected model is not available.\n\n**Solutions:**\n- Try a different model from the dropdown\n- Use: `gemini-2.0-flash-exp` or `gemini-flash-latest`\n\n*Error: {error_msg}*"
+    elif "quota" in error_msg.lower() or "429" in error_msg:
+        error_text = f"""❌ **Quota Exceeded**
+
+Your API quota limit has been reached.
+
+**Quick Fixes:**
+1. **Wait**: Free tier resets daily (24 hours)
+2. **Switch Model**: Use a lighter model like `gemini-2.0-flash-exp`
+3. **Reduce Tokens**: Lower max tokens to 512-1024
+4. **Check Usage**: Visit [Google AI Studio](https://aistudio.google.com/app/apikey)
+5. **New Key**: Create new Google account for fresh quota
+
+**Note:** All fallback models also exceeded quota.
+
+*Error: {error_msg}*"""
+    elif "api key" in error_msg.lower():
+        error_text = f"❌ **API Key Error**\n\nYour API key is invalid or expired.\n\n**Solutions:**\n- Verify your API key is correct\n- Generate a new key at [Google AI Studio](https://aistudio.google.com/app/apikey)\n\n*Error: {error_msg}*"
+    else:
+        error_text = f"❌ **Error**\n\nFailed to generate response.\n\n*Error: {error_msg}*"
+    
+    return {
+        "success": False,
+        "text": error_text,
+        "error": error_msg
+    }
 
 # ============================================================================
 # MAIN APP UI
@@ -300,8 +362,16 @@ max_tokens = st.sidebar.slider(
     "Max tokens",
     min_value=256,
     max_value=8192,
-    value=2048,
-    step=256
+    value=1024,
+    step=256,
+    help="Lower values use less quota"
+)
+
+# Fallback models option
+use_fallback = st.sidebar.checkbox(
+    "Enable auto-fallback",
+    value=True,
+    help="Automatically try lighter models if quota exceeded"
 )
 
 if st.sidebar.button("Generate", type="primary"):
@@ -309,11 +379,28 @@ if st.sidebar.button("Generate", type="primary"):
         st.sidebar.error("Enter a question")
     else:
         with st.spinner("Generating..."):
-            response = generate_response(selected_model, test_question, max_tokens)
+            # Prepare fallback models (lighter models)
+            fallback_models = [
+                "models/gemini-2.0-flash-exp",
+                "models/gemini-2.0-flash",
+                "models/gemini-flash-latest",
+                "models/gemini-2.0-flash-lite"
+            ] if use_fallback else None
+            
+            result = generate_response(selected_model, test_question, max_tokens, fallback_models)
             
             st.markdown("---")
             st.markdown("### Response:")
-            st.markdown(response)
+            
+            # Show warning if fallback was used
+            if result.get("warning"):
+                st.warning(result["warning"])
+            
+            st.markdown(result["text"])
+            
+            # Show metadata
+            if result["success"]:
+                st.caption(f"Model: {result['model_used']} | Attempt: {result['attempt']}")
             
             with st.expander("Retrieved Context"):
                 context = retrieve_relevant_context(test_question)
@@ -341,11 +428,26 @@ if prompt := st.chat_input("Ask a medical question..."):
     # Generate response
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            response = generate_response(selected_model, prompt, max_tokens)
-            st.markdown(response)
+            # Use fallback models if enabled
+            fallback_models = [
+                "models/gemini-2.0-flash-exp",
+                "models/gemini-2.0-flash",
+                "models/gemini-flash-latest"
+            ] if use_fallback else None
+            
+            result = generate_response(selected_model, prompt, max_tokens, fallback_models)
+            
+            # Show warning if fallback was used
+            if result.get("warning"):
+                st.warning(result["warning"])
+            
+            st.markdown(result["text"])
+            
+            if result["success"]:
+                st.caption(f"Model: {result['model_used']}")
     
     # Add assistant message
-    st.session_state.messages.append({"role": "assistant", "content": response})
+    st.session_state.messages.append({"role": "assistant", "content": result["text"]})
 
 # Clear chat button
 if st.sidebar.button("Clear Chat"):
@@ -361,8 +463,14 @@ st.sidebar.markdown("""
 ### Instructions:
 1. Enter API key
 2. Select model (auto-selected)
-3. Ask medical questions
-4. Get AI responses with context
+3. Enable auto-fallback for quota issues
+4. Lower max tokens if quota errors persist
+5. Ask medical questions
+
+**Quota Tips:**
+- Use lighter models (flash-exp)
+- Reduce max tokens to 512-1024
+- Wait 24h for quota reset
 
 **Note:** Educational purposes only.
 """)
