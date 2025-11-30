@@ -13,7 +13,7 @@ if 'model' not in st.session_state:
 with st.sidebar:
     st.header("System Status")
     
-    api_key = st.text_input("AIzaSyDF-W-pw8E-20SjTGVri_ChGCuD9wMRsy4", type="1234", value=st.session_state.api_key)
+    api_key = st.text_input("Enter Gemini API Key", type="password", value=st.session_state.api_key)
     
     if api_key:
         st.session_state.api_key = api_key
